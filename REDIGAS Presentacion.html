@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REDIGAS — Base de Datos</title>
+<style>
+  :root{
+    --cyan:#22E1D6; --mint:#3DF5A6; --amber:#FFC24B; --violet:#9B86FF; --red:#FF7A85;
+    --ink:#04070D; --bg1:#0A1424; --bg2:#0E2236; --panel:#0E2236;
+    --txt:#EAF6F5; --txt2:#9FC4C2;
+    --serif:Georgia,'Times New Roman',serif;
+    --mono:'Consolas','SF Mono',ui-monospace,monospace;
+    --sans:'Segoe UI',system-ui,-apple-system,Helvetica,Arial,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:var(--sans)}
+
+  /* ---- Escenario: mantiene 16:9 y escala con la ventana ---- */
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  #deck{
+    position:relative;width:1280px;height:720px;
+    background:radial-gradient(120% 120% at 80% 10%, #0E2236 0%, #0A1424 45%, #04070D 100%);
+    overflow:hidden;border-radius:6px;
+    box-shadow:0 30px 90px rgba(0,0,0,.7);
+  }
+
+  /* fondo: rejilla + nodos */
+  .grid-bg{position:absolute;inset:0;
+    background-image:linear-gradient(rgba(34,225,214,.045) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(34,225,214,.045) 1px,transparent 1px);
+    background-size:46px 46px;pointer-events:none}
+  .glow{position:absolute;border-radius:50%;filter:blur(60px);pointer-events:none;opacity:.55}
+  .glow.c{background:radial-gradient(circle,var(--cyan),transparent 70%)}
+  .glow.m{background:radial-gradient(circle,var(--mint),transparent 70%)}
+  .glow.v{background:radial-gradient(circle,var(--violet),transparent 70%)}
+
+  /* ---- Slides ---- */
+  .slide{position:absolute;inset:0;padding:54px 64px;opacity:0;visibility:hidden;
+    transition:opacity .55s ease, transform .55s ease;transform:translateY(18px) scale(.99)}
+  .slide.active{opacity:1;visibility:visible;transform:none;z-index:2}
+  .slide.prev{transform:translateY(-18px) scale(.99)}
+
+  /* header de contenido */
+  .kicker-num{font-family:var(--mono);color:var(--mint);font-size:15px;font-weight:700;letter-spacing:2px}
+  .kicker{color:var(--cyan);font-size:13px;font-weight:700;letter-spacing:4px;margin-top:6px}
+  h2.title{font-family:var(--serif);color:var(--txt);font-size:38px;font-weight:700;margin-top:4px;
+    text-shadow:0 0 24px rgba(34,225,214,.35)}
+  .hline{margin-top:14px;height:2px;width:100%;
+    background:linear-gradient(90deg,var(--cyan) 0,var(--cyan) 130px,rgba(34,225,214,.18) 130px,rgba(34,225,214,.12) 100%)}
+
+  /* glass panel */
+  .glass{background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.02));
+    border:1.5px solid rgba(34,225,214,.45);border-radius:18px;backdrop-filter:blur(4px)}
+  .glass.m{border-color:rgba(61,245,166,.5)}
+  .glass.a{border-color:rgba(255,194,75,.5)}
+  .glass.v{border-color:rgba(155,134,255,.5)}
+
+  .txt{color:var(--txt)} .txt2{color:var(--txt2)}
+  .cyan{color:var(--cyan)} .mint{color:var(--mint)} .amber{color:var(--amber)} .violet{color:var(--violet)} .red{color:var(--red)}
+  .mono{font-family:var(--mono)}
+
+  /* chips */
+  .chip{display:inline-flex;align-items:center;padding:7px 16px;border-radius:30px;
+    border:1px solid rgba(34,225,214,.4);background:rgba(14,34,54,.6);color:var(--txt);
+    font-size:13px;margin-right:10px;margin-top:10px}
+
+  /* iconos circle */
+  .ico{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;
+    background:var(--panel);border:1.3px solid var(--cyan)}
+  .ico svg{width:55%;height:55%}
+
+  /* listas */
+  .row{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
+  .num{font-family:var(--mono);color:var(--cyan);font-size:18px;font-weight:700;min-width:30px}
+
+  /* stat cards */
+  .stat{position:relative;background:rgba(14,34,54,.55);border:1.2px solid rgba(34,225,214,.3);
+    border-radius:12px;padding:18px 22px;overflow:hidden}
+  .stat .bar{position:absolute;left:0;top:18px;bottom:18px;width:5px;border-radius:3px}
+  .stat .big{font-family:var(--serif);font-size:40px;font-weight:700;line-height:1}
+  .stat .lbl{color:var(--txt);font-size:14px;margin-top:8px}
+  .stat .fn{font-family:var(--mono);font-size:12px;color:var(--txt2);font-style:italic}
+
+  /* bar chart */
+  .bars{display:flex;align-items:flex-end;gap:26px;height:230px;padding:30px 10px 0;border-bottom:1px solid rgba(34,225,214,.18)}
+  .bar-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+  .bar-fill{width:62%;border-radius:6px 6px 0 0;position:relative;transition:height 1s cubic-bezier(.2,.8,.2,1)}
+  .bar-val{position:absolute;top:-24px;width:100%;text-align:center;font-size:13px;font-weight:700;color:var(--txt)}
+  .bar-cap{margin-top:10px;font-size:13px;color:var(--txt2)}
+
+  /* tabla mini */
+  table.mini{border-collapse:collapse;width:100%;font-size:13px}
+  table.mini th{background:rgba(255,194,75,.16);color:var(--amber);padding:6px 8px;text-align:center;font-weight:700}
+  table.mini td{padding:6px 8px;text-align:center;color:var(--txt);border-bottom:1px solid rgba(255,255,255,.06)}
+
+  /* ER nodes */
+  .er-node{position:absolute;width:150px;height:96px;border-radius:14px;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:6px}
+  .er-node .lbl{font-size:13px;font-weight:700;letter-spacing:.5px}
+  .er-line{position:absolute;height:1.6px;background:linear-gradient(90deg,rgba(34,225,214,.6),rgba(34,225,214,.25));transform-origin:left center}
+  .er-dot{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--mint);box-shadow:0 0 8px var(--mint)}
+  .er-rel{position:absolute;font-style:italic;font-weight:700;color:var(--mint);font-size:13px}
+
+  /* code block */
+  .code{background:rgba(4,10,18,.6);border:1px solid rgba(34,225,214,.18);border-left:3px solid var(--cyan);
+    border-radius:8px;padding:14px 16px;font-family:var(--mono);font-size:13px;color:#BFF7F0;line-height:1.55;white-space:pre}
+
+  /* cover */
+  .cover-title{font-family:var(--serif);font-size:104px;font-weight:700;color:var(--txt);line-height:.95;
+    text-shadow:0 0 40px rgba(34,225,214,.4)}
+  .ring{position:absolute;border-radius:50%;border:1.5px dashed rgba(34,225,214,.3)}
+
+  /* HUD chrome */
+  .corner{position:absolute;width:22px;height:22px;border:2px solid rgba(34,225,214,.5)}
+  .corner.tl{top:16px;left:16px;border-right:none;border-bottom:none}
+  .corner.tr{top:16px;right:16px;border-left:none;border-bottom:none}
+  .corner.bl{bottom:16px;left:16px;border-right:none;border-top:none}
+  .corner.br{bottom:16px;right:16px;border-left:none;border-top:none}
+
+  /* progreso + controles */
+  #progress{position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,var(--cyan),var(--mint));z-index:30;transition:width .4s ease;box-shadow:0 0 10px var(--cyan)}
+  #pageno{position:absolute;bottom:18px;right:24px;font-family:var(--mono);font-size:12px;color:var(--txt2);z-index:30}
+  #hint{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);color:#5a7a78;font-size:12px;
+    font-family:var(--sans);z-index:40;transition:opacity .6s;pointer-events:none}
+  .navbtn{position:fixed;top:50%;transform:translateY(-50%);width:46px;height:46px;border-radius:50%;
+    background:rgba(14,34,54,.7);border:1px solid rgba(34,225,214,.4);color:var(--cyan);font-size:22px;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:50;user-select:none;transition:.2s}
+  .navbtn:hover{background:rgba(34,225,214,.2);box-shadow:0 0 16px rgba(34,225,214,.4)}
+  #prev{left:18px} #next{right:18px}
+
+  /* animación de entrada por elemento */
+  .anim{opacity:0;transform:translateY(14px)}
+  .slide.active .anim{animation:rise .6s ease forwards}
+  .slide.active .anim:nth-child(1){animation-delay:.05s}
+  .slide.active .anim:nth-child(2){animation-delay:.13s}
+  .slide.active .anim:nth-child(3){animation-delay:.21s}
+  .slide.active .anim:nth-child(4){animation-delay:.29s}
+  .slide.active .anim:nth-child(5){animation-delay:.37s}
+  .slide.active .anim:nth-child(6){animation-delay:.45s}
+  .slide.active .anim:nth-child(7){animation-delay:.53s}
+  .slide.active .anim:nth-child(8){animation-delay:.61s}
+  @keyframes rise{to{opacity:1;transform:none}}
+
+  /* nodos animados de fondo (canvas) */
+  #net{position:absolute;inset:0;z-index:0;pointer-events:none}
+  .slide-content{position:relative;z-index:1;width:100%;height:100%}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="deck">
+    <canvas id="net"></canvas>
+    <div class="grid-bg"></div>
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+
+    <!-- ============ SLIDE 1 — PORTADA ============ -->
+    <section class="slide" data-bg="title">
+      <div class="slide-content">
+        <div class="ring" style="width:340px;height:340px;right:60px;top:70px"></div>
+        <div class="ring" style="width:250px;height:250px;right:105px;top:115px;border-style:solid;border-color:rgba(61,245,166,.25)"></div>
+        <div class="anim" style="display:flex;align-items:center;gap:16px;margin-top:30px">
+          <span class="ico" style="width:50px;height:50px;border-color:var(--amber);box-shadow:0 0 18px rgba(255,194,75,.5)">__FIRE__</span>
+          <span style="color:var(--cyan);font-size:14px;font-weight:700;letter-spacing:5px">PROYECTO DE AULA &nbsp;·&nbsp; BASE DE DATOS</span>
+        </div>
+        <div class="anim cover-title" style="margin-top:36px">REDIGAS</div>
+        <div class="anim mint" style="font-size:22px;margin-top:14px">Diseño de base de datos &nbsp;·&nbsp; Análisis con funciones SQL</div>
+        <div class="anim" style="margin-top:18px">
+          <span class="chip">PostgreSQL</span><span class="chip">Modelo E-R</span>
+          <span class="chip">SQL · DDL/DML/DQL</span><span class="chip">Analítica</span>
+        </div>
+        <div class="anim" style="display:flex;gap:16px;margin-top:54px;align-items:center">
+          <div style="width:5px;height:54px;background:var(--mint);border-radius:3px"></div>
+          <div>
+            <div class="txt" style="font-size:18px;font-weight:700">Geronimo Rincon Zambrano</div>
+            <div class="txt2" style="font-size:14px;margin-top:4px">Docente: Olga Lucia Arrieta Roa &nbsp;·&nbsp; Unidades Tecnológicas de Santander</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 2 — EL PROBLEMA ============ -->
+    <section class="slide">
+      <div class="slide-content">
+        <div class="anim kicker-num">/ 01</div>
+        <div class="anim kicker">CONTEXTO</div>
+        <h2 class="anim title">El problema: información sin control</h2>
+        <div class="anim hline"></div>
+        <div style="display:flex;gap:40px;margin-top:34px">
+          <div style="flex:1.05">
+            <p class="anim txt" style="font-size:17px;line-height:1.5">REDIGAS es un emprendimiento de dos socios que ofrece soluciones de gas. Hoy sus datos viven en cuadernos, llamadas y mensajes, lo que genera desorden y pérdidas.</p>
+            <div class="anim" style="margin-top:26px">
+              __PAIN1__
+              __PAIN2__
+              __PAIN3__
+            </div>
+          </div>
+          <div class="anim glass m" style="flex:.95;padding:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+            <span class="ico" style="width:62px;height:62px;box-shadow:0 0 20px rgba(34,225,214,.5)">__DB__</span>
+            <div class="mint" style="font-size:15px;font-weight:700;letter-spacing:2px;margin-top:18px">LA SOLUCIÓN</div>
+            <p class="txt" style="font-size:15.5px;line-height:1.5;margin-top:12px">Una base de datos que centraliza clientes, técnicos, servicios y órdenes — y que además permite analizar el negocio con consultas SQL.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 3 — OBJETIVOS ============ -->
+    <section class="slide">
+      <div class="slide-content">
+        <div class="anim kicker-num">/ 02</div>
+        <div class="anim kicker">PROPÓSITO</div>
+        <h2 class="anim title">Objetivos del proyecto</h2>
+        <div class="anim hline"></div>
+        <div style="display:flex;gap:34px;margin-top:32px">
+          <div class="anim glass" style="flex:.92;padding:28px">
+            <div style="display:flex;align-items:center;gap:14px">
+              <span class="ico" style="width:50px;height:50px;box-shadow:0 0 14px rgba(34,225,214,.5)">__TARGET__</span>
+              <span class="cyan" style="font-size:15px;font-weight:700;letter-spacing:1px">OBJETIVO GENERAL</span>
+            </div>
+            <p class="txt" style="font-size:16px;line-height:1.55;margin-top:18px">Diseñar una base de datos para REDIGAS que organice clientes, servicios, técnicos y órdenes, y la analice con funciones y operadores SQL para apoyar la toma de decisiones.</p>
+          </div>
+          <div style="flex:1.08">
+            <div class="anim mint" style="font-size:14px;font-weight:700;letter-spacing:1px;margin-bottom:18px">OBJETIVOS ESPECÍFICOS</div>
+            <div class="anim row"><span class="num">01</span><span class="txt" style="font-size:15px">Modelar el negocio con un diagrama entidad-relación.</span></div>
+            <div class="anim row"><span class="num">02</span><span class="txt" style="font-size:15px">Transformar el modelo en tablas, campos y tipos de datos.</span></div>
+            <div class="anim row"><span class="num">03</span><span class="txt" style="font-size:15px">Crear la base de datos con sentencias DDL.</span></div>
+            <div class="anim row"><span class="num">04</span><span class="txt" style="font-size:15px">Insertar, actualizar, eliminar y consultar con DML y DQL.</span></div>
+            <div class="anim row"><span class="num">05</span><span class="txt" style="font-size:15px">Aplicar funciones, agrupación y operadores para indicadores de gestión.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 4 — MODELO CONCEPTUAL ============ -->
+    <section class="slide">
+      <div class="slide-content">
+        <div class="anim kicker-num">/ 03</div>
+        <div class="anim kicker">MODELO CONCEPTUAL</div>
+        <h2 class="anim title">Arquitectura de entidades</h2>
+        <div class="anim hline"></div>
+        <div class="anim" style="position:relative;height:380px;margin-top:24px">
+          <!-- líneas -->
+          <div class="er-line" style="left:215px;top:212px;width:175px;transform:rotate(18deg)"></div>
+          <div class="er-line" style="left:215px;top:300px;width:175px;transform:rotate(-16deg)"></div>
+          <div class="er-line" style="left:730px;top:212px;width:175px;transform:rotate(162deg)"></div>
+          <div class="er-dot" style="left:300px;top:240px"></div>
+          <div class="er-dot" style="left:300px;top:272px"></div>
+          <div class="er-dot" style="left:815px;top:240px"></div>
+          <div class="er-rel" style="left:262px;top:200px">realiza</div>
+          <div class="er-rel" style="left:250px;top:300px">corresponde</div>
+          <div class="er-rel" style="left:800px;top:200px">atiende</div>
+          <!-- nodos -->
+          <div class="er-node glass v" style="left:70px;top:150px">__USERS__<span class="lbl txt">CLIENTES</span></div>
+          <div class="er-node glass v" style="left:70px;top:280px">__LIST__<span class="lbl txt">SERVICIOS</span></div>
+          <div class="er-node glass v" style="left:880px;top:150px">__TOOLS__<span class="lbl txt">TECNICOS</span></div>
+          <div class="er-node glass" style="left:455px;top:208px;width:200px;height:108px;border-color:var(--cyan);box-shadow:0 0 22px rgba(34,225,214,.35)">__DBC__<span class="lbl cyan">ORDENES_SERVICIO</span></div>
+        </div>
+        <div class="anim txt2" style="text-align:center;font-style:italic;font-size:14px;margin-top:6px">Relación 1 : N en los tres casos — un cliente, un servicio y un técnico pueden estar en muchas órdenes.</div>
+        <div class="anim violet" style="text-align:center;font-size:13px;margin-top:8px">Tablas independientes: usuarios · auditoría · históricos</div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 5 — MODELO RELACIONAL ============ -->
+    <section class="slide">
+      <div class="slide-content">
+        <div class="anim kicker-num">/ 04</div>
+        <div class="anim kicker">MODELO RELACIONAL</div>
+        <h2 class="anim title">Siete tablas, dos grupos</h2>
+        <div class="anim hline"></div>
+        <div style="display:flex;gap:30px;margin-top:30px">
+          <div style="flex:1.5">
+            <div class="anim cyan" style="font-size:13px;font-weight:700;letter-spacing:2px;margin-bottom:14px">ENTIDADES PRINCIPALES</div>
+            __RELTABLE__
+          </div>
+          <div class="anim glass v" style="flex:.85;padding:20px">
+            <div class="violet" style="font-size:13px;font-weight:700;letter-spacing:1px">INDEPENDIENTES</div>
+            <div style="margin-top:14px">__INDEP__</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 6 — DDL/DML/DQL ============ -->
+    <section class="slide">
+      <div class="slide-content">
+        <div class="anim kicker-num">/ 05</div>
+        <div class="anim kicker">CONSTRUCCIÓN</div>
+        <h2 class="anim title">Del esquema a las consultas</h2>
+        <div class="anim hline"></div>
+        <div style="display:flex;gap:26px;margin-top:36px">
+          __SQLCARD_DDL__
+          __SQLCARD_DML__
+          __SQLCARD_DQL__
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 7 — TRANSICIÓN ============ -->
+    <section class="slide" data-bg="section">
+      <div class="slide-content">
+        <div class="ring" style="width:360px;height:360px;right:90px;top:200px"></div>
+        <div class="anim" style="display:flex;align-items:center;gap:14px;margin-top:20px">
+          <span class="ico" style="width:52px;height:52px;border-color:var(--amber);box-shadow:0 0 18px rgba(255,194,75,.5)">__BOLT__</span>
+          <span class="amber" style="font-size:14px;font-weight:700;letter-spacing:5px">EL APORTE DE ESTA VERSIÓN</span>
+        </div>
+        <div class="anim" style="font-family:var(--serif);font-size:52px;font-weight:700;color:var(--txt);margin-top:22px;text-shadow:0 0 28px rgba(34,225,214,.35)">Funciones y operadores SQL</div>
+        <p class="anim mint" style="font-size:19px;line-height:1.5;margin-top:18px;max-width:760px">La base de datos deja de ser un archivo de registros y se convierte en una herramienta para analizar el negocio y responder preguntas reales.</p>
+        <div class="anim" style="display:flex;flex-wrap:wrap;gap:14px;margin-top:34px;max-width:840px">
+          <div class="chip mono" style="font-size:14px;padding:11px 20px">COUNT · SUM · AVG</div>
+          <div class="chip mono" style="font-size:14px;padding:11px 20px">MAX · MIN</div>
+          <div class="chip mono" style="font-size:14px;padding:11px 20px">GROUP BY</div>
+          <div class="chip mono" style="font-size:14px;padding:11px 20px">ORDER BY</div>
+          <div class="chip mono" style="font-size:14px;padding:11px 20px">Operadores ( * )</div>
+          <div class="chip mono" style="font-size:14px;padding:11px 20px">ROUND · TRUNC</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 8 — FUNCIONES DE GRUPO (STATS) ============ -->
+    <section class="slide">
+      <div class="slide-content">
+        <div class="anim kicker-num">/ 06</div>
+        <div class="anim kicker">FUNCIONES DE GRUPO</div>
+        <h2 class="anim title">El tablero del negocio en una consulta</h2>
+        <div class="anim hline"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:30px">
+          <div class="anim stat"><div class="bar" style="background:var(--cyan)"></div><div class="big cyan" style="text-shadow:0 0 16px rgba(34,225,214,.5)">5</div><div class="lbl">órdenes registradas</div><div class="fn" style="text-align:right;margin-top:-14px">COUNT(*)</div></div>
+          <div class="anim stat"><div class="bar" style="background:var(--mint)"></div><div class="big mint" style="text-shadow:0 0 16px rgba(61,245,166,.5)">$1.050.000</div><div class="lbl">facturado en total</div><div class="fn" style="text-align:right;margin-top:-14px">SUM(valor_total)</div></div>
+          <div class="anim stat"><div class="bar" style="background:var(--cyan)"></div><div class="big cyan" style="text-shadow:0 0 16px rgba(34,225,214,.5)">$210.000</div><div class="lbl">ticket promedio</div><div class="fn" style="text-align:right;margin-top:-14px">ROUND(AVG(...),2)</div></div>
+          <div class="anim stat"><div class="bar" style="background:var(--amber)"></div><div class="big amber" style="text-shadow:0 0 16px rgba(255,194,75,.5)">$420k / $120k</div><div class="lbl">orden máx / mín</div><div class="fn" style="text-align:right;margin-top:-14px">MAX() / MIN()</div></div>
+        </div>
+        <div class="anim txt2" style="text-align:center;font-style:italic;font-size:13.5px;margin-top:22px">Una sola consulta combina cuatro funciones agregadas y ROUND para presentar los valores monetarios con dos decimales.</div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 9 — GROUP BY (CHARTS) ============ -->
+    <section class="slide">
+      <div class="slide-content">
+        <div class="anim kicker-num">/ 07</div>
+        <div class="anim kicker">AGRUPACIÓN CON GROUP BY</div>
+        <h2 class="anim title">Reportes por categoría</h2>
+        <div class="anim hline"></div>
+        <div style="display:flex;gap:50px;margin-top:30px">
+          <div class="anim" style="flex:1">
+            <div class="cyan" style="font-size:14px;font-weight:700;margin-bottom:18px">Facturación por estado</div>
+            <div class="bars" data-chart="estado">
+              <div class="bar-item"><div class="bar-fill" data-h="92%" style="background:linear-gradient(180deg,var(--cyan),rgba(34,225,214,.3));box-shadow:0 0 18px rgba(34,225,214,.4)"><span class="bar-val">$855.000</span></div><div class="bar-cap">Finalizada</div></div>
+              <div class="bar-item"><div class="bar-fill" data-h="21%" style="background:linear-gradient(180deg,var(--mint),rgba(61,245,166,.3));box-shadow:0 0 18px rgba(61,245,166,.4)"><span class="bar-val">$195.000</span></div><div class="bar-cap">En proceso</div></div>
+            </div>
+          </div>
+          <div class="anim" style="flex:1">
+            <div class="mint" style="font-size:14px;font-weight:700;margin-bottom:18px">Órdenes por técnico</div>
+            <div class="bars" data-chart="tecnico">
+              <div class="bar-item"><div class="bar-fill" data-h="92%" style="background:linear-gradient(180deg,var(--mint),rgba(61,245,166,.3));box-shadow:0 0 18px rgba(61,245,166,.4)"><span class="bar-val">2</span></div><div class="bar-cap">Téc. 2</div></div>
+              <div class="bar-item"><div class="bar-fill" data-h="46%" style="background:linear-gradient(180deg,var(--cyan),rgba(34,225,214,.3))"><span class="bar-val">1</span></div><div class="bar-cap">Téc. 1</div></div>
+              <div class="bar-item"><div class="bar-fill" data-h="46%" style="background:linear-gradient(180deg,var(--cyan),rgba(34,225,214,.3))"><span class="bar-val">1</span></div><div class="bar-cap">Téc. 3</div></div>
+              <div class="bar-item"><div class="bar-fill" data-h="46%" style="background:linear-gradient(180deg,var(--cyan),rgba(34,225,214,.3))"><span class="bar-val">1</span></div><div class="bar-cap">Téc. 4</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="anim txt2" style="text-align:center;font-style:italic;font-size:13.5px;margin-top:24px">GROUP BY divide los datos en grupos y aplica COUNT / SUM a cada uno: revela la carga de trabajo y los ingresos por categoría.</div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 10 — ORDER BY + OPERADORES ============ -->
+    <section class="slide">
+      <div class="slide-content">
+        <div class="anim kicker-num">/ 08</div>
+        <div class="anim kicker">ORDENAMIENTO Y CÁLCULO</div>
+        <h2 class="anim title">ORDER BY y operadores matemáticos</h2>
+        <div class="anim hline"></div>
+        <div style="display:flex;gap:30px;margin-top:30px">
+          <div class="anim glass" style="flex:1;padding:24px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span class="ico" style="width:46px;height:46px;background:var(--cyan)">__SORT__</span>
+              <span class="cyan mono" style="font-size:17px;font-weight:700">ORDER BY</span>
+            </div>
+            <div class="txt2" style="font-size:13.5px;margin-top:16px">Servicios del más caro al más económico:</div>
+            <div style="margin-top:12px">
+              __ORDERROW_Instalación de red_$350.000__
+              __ORDERROW_Cambio de medidor_$180.000__
+              __ORDERROW_Regata y canalización_$160.000__
+              __ORDERROW_Mantenimiento prev._$120.000__
+            </div>
+          </div>
+          <div class="anim glass a" style="flex:1;padding:24px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span class="ico" style="width:46px;height:46px;background:var(--amber);border-color:var(--amber)">__COINS__</span>
+              <span class="amber mono" style="font-size:16px;font-weight:700">Operadores ( * )</span>
+            </div>
+            <div class="txt2" style="font-size:13.5px;margin-top:16px">Cálculo del IVA (19%) de cada orden, sin guardarlo en la tabla:</div>
+            <div class="amber mono" style="font-size:13.5px;margin-top:8px">valor_total * 0.19 AS iva</div>
+            <table class="mini" style="margin-top:14px">
+              <tr><th>Orden</th><th>Valor</th><th>IVA</th></tr>
+              <tr><td>1</td><td>$420.000</td><td>$79.800</td></tr>
+              <tr><td>3</td><td>$195.000</td><td>$37.050</td></tr>
+              <tr><td>5</td><td>$120.000</td><td>$22.800</td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 11 — ¿POR QUÉ ESTAS FUNCIONES? ============ -->
+    <section class="slide">
+      <div class="slide-content">
+        <div class="anim kicker-num">/ 09</div>
+        <div class="anim kicker">CRITERIO</div>
+        <h2 class="anim title">¿Por qué estas funciones?</h2>
+        <div class="anim hline"></div>
+        <p class="anim txt" style="font-size:16px;margin-top:26px">No se incluyeron todas las funciones de las guías, sino las que responden preguntas reales del negocio:</p>
+        <div style="margin-top:22px">
+          __WHY_COUNT / SUM / AVG_¿Cuántas órdenes hay y cuánto factura el negocio en promedio?__
+          __WHY_MAX / MIN_¿Cuál fue la orden más cara y la más económica?__
+          __WHY_GROUP BY_¿Cómo se reparten ingresos y trabajo por estado, técnico y servicio?__
+          __WHY_ORDER BY_¿Qué servicios cuestan más? Apoya cotizaciones y precios.__
+          __WHY_Operadores ( * )_Calcula IVA y comisiones sin almacenarlos.__
+        </div>
+        <div class="anim" style="display:flex;align-items:center;gap:12px;margin-top:22px;padding:14px 18px;border-radius:10px;background:rgba(58,21,24,.45);border:1px solid rgba(255,122,133,.4)">
+          <span style="flex-shrink:0">__TIMES__</span>
+          <span style="font-size:14px"><b class="red">Se descartó POWER:</b> <span class="txt">elevar al cuadrado el precio de un servicio no tiene ningún significado para REDIGAS.</span></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 12 — CONCLUSIONES ============ -->
+    <section class="slide" data-bg="section">
+      <div class="slide-content">
+        <div class="ring" style="width:300px;height:300px;right:80px;top:-40px"></div>
+        <div class="anim" style="display:flex;align-items:center;gap:16px;margin-top:14px">
+          <span class="ico" style="width:56px;height:56px;border-color:var(--amber);box-shadow:0 0 18px rgba(255,194,75,.5)">__BULB__</span>
+          <span style="font-family:var(--serif);font-size:42px;font-weight:700;color:var(--txt);text-shadow:0 0 24px rgba(34,225,214,.35)">Conclusiones</span>
+        </div>
+        <div style="margin-top:34px">
+          __CONC_1_La base de datos organiza clientes, técnicos, servicios y órdenes, eliminando la informalidad de cuadernos y mensajes.__
+          __CONC_2_Las funciones y operadores SQL convierten los datos en información de gestión: facturación, ticket promedio y carga por técnico.__
+          __CONC_3_Elegir las funciones por su utilidad —y descartar las que no aportan— demuestra criterio orientado al negocio, no solo manejo técnico.__
+        </div>
+        <div class="anim" style="margin-top:30px;border-top:1px solid rgba(34,225,214,.3);padding-top:12px">
+          <span class="txt2 mono" style="font-size:13px;letter-spacing:1px">REDIGAS &nbsp;·&nbsp; Base de Datos &nbsp;·&nbsp; Geronimo Rincon Zambrano</span>
+        </div>
+      </div>
+    </section>
+
+    <div id="progress"></div>
+    <div id="pageno">01 / 12</div>
+  </div>
+</div>
+
+<div class="navbtn" id="prev">‹</div>
+<div class="navbtn" id="next">›</div>
+<div id="hint">← → o barra espaciadora para navegar · F pantalla completa</div>
+
+<script>
+/* ---------- Iconos SVG inline ---------- */
+const I = {
+  fire:'<svg viewBox="0 0 512 512" fill="#FFC24B"><path d="M216 23.86c0-23.8-30.65-32.77-44.15-13.04C48 191.85 224 200 224 288c0 35.63-29.11 64.46-64.85 63.99-35.17-.45-63.15-29.79-63.15-64.97v-58.62c0-22.86-25.83-36.25-44.59-22.835C24.45 250.555 0 298.085 0 352c0 88.37 71.63 160 160 160s160-71.63 160-160c0-116.55-104-141.96-104-328.14z"/></svg>',
+  db:'<svg viewBox="0 0 448 512" fill="#22E1D6"><path d="M448 73.143v45.714C448 159.143 347.667 192 224 192S0 159.143 0 118.857V73.143C0 32.857 100.333 0 224 0s224 32.857 224 73.143zM448 176v102.857C448 319.143 347.667 352 224 352S0 319.143 0 278.857V176c48.125 33.143 136.208 48.572 224 48.572S399.874 209.143 448 176zm0 160v102.857C448 479.143 347.667 512 224 512S0 479.143 0 438.857V336c48.125 33.143 136.208 48.572 224 48.572S399.874 369.143 448 336z"/></svg>',
+  dbc:'<svg viewBox="0 0 448 512" fill="#04070D"><path d="M448 73.143v45.714C448 159.143 347.667 192 224 192S0 159.143 0 118.857V73.143C0 32.857 100.333 0 224 0s224 32.857 224 73.143zM448 176v102.857C448 319.143 347.667 352 224 352S0 319.143 0 278.857V176c48.125 33.143 136.208 48.572 224 48.572S399.874 209.143 448 176zm0 160v102.857C448 479.143 347.667 512 224 512S0 479.143 0 438.857V336c48.125 33.143 136.208 48.572 224 48.572S399.874 369.143 448 336z"/></svg>',
+  users:'<svg viewBox="0 0 640 512" fill="#22E1D6"><path d="M96 224c35.3 0 64-28.7 64-64s-28.7-64-64-64-64 28.7-64 64 28.7 64 64 64zm448 0c35.3 0 64-28.7 64-64s-28.7-64-64-64-64 28.7-64 64 28.7 64 64 64zm32 32h-64c-17.6 0-33.5 7.1-45.1 18.6 40.3 22.1 68.9 62 75.1 109.4h66c17.7 0 32-14.3 32-32v-32c0-35.3-28.7-64-64-64zm-256 0c61.9 0 112-50.1 112-112S381.9 32 320 32 208 82.1 208 144s50.1 112 112 112zm76.8 32h-8.3c-20.8 10-43.9 16-68.5 16s-47.6-6-68.5-16h-8.3C179.6 288 128 339.6 128 403.2V432c0 26.5 21.5 48 48 48h288c26.5 0 48-21.5 48-48v-28.8c0-63.6-51.6-115.2-115.2-115.2zM128 274.6c-11.6-11.5-27.5-18.6-45.1-18.6H64c-35.3 0-64 28.7-64 64v32c0 17.7 14.3 32 32 32h65.9c6.3-47.4 34.9-87.3 75.2-109.4z"/></svg>',
+  tools:'<svg viewBox="0 0 512 512" fill="#22E1D6"><path d="M501.1 395.7L384 278.6c-23.1-23.1-57.6-27.6-85.4-13.9L191.1 158.1 191.1 96 64 0 0 64l96 127.1 62.1 0 106.7 106.7c-13.7 27.8-9.2 62.3 13.9 85.4l117.1 117.1c14.6 14.6 38.2 14.6 52.7 0l52.7-52.7c14.5-14.6 14.5-38.2-.1-52.8z"/></svg>',
+  list:'<svg viewBox="0 0 384 512" fill="#22E1D6"><path d="M336 64h-80c0-35.3-28.7-64-64-64s-64 28.7-64 64H48C21.5 64 0 85.5 0 112v352c0 26.5 21.5 48 48 48h288c26.5 0 48-21.5 48-48V112c0-26.5-21.5-48-48-48zM192 40c13.3 0 24 10.7 24 24s-10.7 24-24 24-24-10.7-24-24 10.7-24 24-24zm121.2 231.8l-143 141.8c-4.7 4.7-12.3 4.6-17-.1l-82.6-83.3c-4.7-4.7-4.6-12.3.1-17L99.1 285c4.7-4.7 12.3-4.6 17 .1l46 46.4 106-105.2c4.7-4.7 12.3-4.6 17 .1l16.9 17c4.7 4.8 4.6 12.4-.1 17.1z"/></svg>',
+  target:'<svg viewBox="0 0 512 512" fill="#22E1D6"><path d="M256 8C119 8 8 119 8 256s111 248 248 248 248-111 248-248S393 8 256 8zm0 432c-101.5 0-184-82.5-184-184S154.5 72 256 72s184 82.5 184 184-82.5 184-184 184zm0-312c-70.7 0-128 57.3-128 128s57.3 128 128 128 128-57.3 128-128-57.3-128-128-128zm0 192c-35.3 0-64-28.7-64-64s28.7-64 64-64 64 28.7 64 64-28.7 64-64 64z"/></svg>',
+  bolt:'<svg viewBox="0 0 320 512" fill="#FFC24B"><path d="M296 160H180.6l42.6-129.8C227.2 15 215.7 0 200 0H56C44 0 33.8 8.9 32.2 20.8l-32 240C-1.7 275.2 9.5 288 24 288h118.7L96.6 482.5c-3.6 15.2 8 29.5 23.3 29.5 8.4 0 16.4-4.4 20.8-12l176-304c9.3-15.9-2.2-36-20.5-36z"/></svg>',
+  bulb:'<svg viewBox="0 0 352 512" fill="#FFC24B"><path d="M96.06 454.35c.01 6.29 1.87 12.45 5.36 17.69l17.09 25.69a31.99 31.99 0 0 0 26.64 14.28h61.71a31.99 31.99 0 0 0 26.64-14.28l17.09-25.69a31.989 31.989 0 0 0 5.36-17.69l.04-38.35H96.01l.05 38.35zM0 176c0 44.37 16.45 84.85 43.56 115.78 16.52 18.85 42.36 58.23 52.21 91.45.04.26.07.52.11.78h160.24c.04-.26.07-.51.11-.78 9.85-33.22 35.69-72.6 52.21-91.45C335.55 260.85 352 220.37 352 176 352 78.61 272.91-.3 175.45 0 73.44.31 0 82.97 0 176z"/></svg>',
+  coins:'<svg viewBox="0 0 512 512" fill="#04070D"><path d="M0 405.3V448c0 35.3 86 64 192 64s192-28.7 192-64v-42.7C342.7 434.4 267.2 448 192 448S41.3 434.4 0 405.3zM320 128c106 0 192-28.7 192-64S426 0 320 0 128 28.7 128 64s86 64 192 64zM0 300.4V352c0 35.3 86 64 192 64s192-28.7 192-64v-51.6C342.7 329.6 267.2 344 192 344S41.3 329.6 0 300.4zm416 11c57.3-11.1 96-31.7 96-55.4v-42.7c-23.2 16.4-57.3 27.6-96 34.5v63.6zM192 160C86 160 0 195.8 0 240s86 80 192 80 192-35.8 192-80-86-80-192-80zm219.3 56.3c60-10.8 100.7-32 100.7-56.3v-42.7c-35.5 25.1-96.5 38.6-160.7 41.8 29.5 14.3 51.2 33.5 60 57.2z"/></svg>',
+  sort:'<svg viewBox="0 0 512 512" fill="#04070D"><path d="M304 416h-64a16 16 0 0 0-16 16v32a16 16 0 0 0 16 16h64a16 16 0 0 0 16-16v-32a16 16 0 0 0-16-16zM16 160h160a16 16 0 0 0 16-16V112a16 16 0 0 0-16-16H16A16 16 0 0 0 0 112v32a16 16 0 0 0 16 16zm480 192H240a16 16 0 0 0-16 16v32a16 16 0 0 0 16 16h256a16 16 0 0 0 16-16v-32a16 16 0 0 0-16-16zm-256-64h128a16 16 0 0 0 16-16v-32a16 16 0 0 0-16-16H240a16 16 0 0 0-16 16v32a16 16 0 0 0 16 16zM16 256h224a16 16 0 0 0 16-16v-32a16 16 0 0 0-16-16H16a16 16 0 0 0-16 16v32a16 16 0 0 0 16 16z"/></svg>',
+  check:'<svg viewBox="0 0 512 512" fill="#3DF5A6"><path d="M504 256c0 137-111 248-248 248S8 393 8 256 119 8 256 8s248 111 248 248zM227.3 387.3l184-184c6.2-6.2 6.2-16.4 0-22.6l-22.6-22.6c-6.2-6.2-16.4-6.2-22.6 0L216 308.1l-70.1-70.1c-6.2-6.2-16.4-6.2-22.6 0l-22.6 22.6c-6.2 6.2-6.2 16.4 0 22.6l104 104c6.2 6.3 16.4 6.3 22.6 0z"/></svg>',
+  times:'<svg viewBox="0 0 512 512" fill="#FF7A85"><path d="M256 8C119 8 8 119 8 256s111 248 248 248 248-111 248-248S393 8 256 8zm121.6 313.1c4.7 4.7 4.7 12.3 0 17L338 377.6c-4.7 4.7-12.3 4.7-17 0L256 312l-65.1 65.6c-4.7 4.7-12.3 4.7-17 0L134.4 338c-4.7-4.7-4.7-12.3 0-17l65.6-65-65.6-65.1c-4.7-4.7-4.7-12.3 0-17l39.6-39.6c4.7-4.7 12.3-4.7 17 0l65 65.7 65.1-65.6c4.7-4.7 12.3-4.7 17 0l39.6 39.6c4.7 4.7 4.7 12.3 0 17L312 256l65.6 65.1z"/></svg>',
+  warn:'<svg viewBox="0 0 576 512" fill="#FFC24B"><path d="M569.5 440C588 472 564.8 512 527.9 512H48.1c-36.9 0-60-40.1-41.6-72L246.4 24c18.5-32 64.7-32 83.2 0l239.9 416zM288 354c-25.4 0-46 20.6-46 46s20.6 46 46 46 46-20.6 46-46-20.6-46-46-46zm-43.7-165.3l7.4 136c.3 6.4 5.6 11.3 12 11.3h48.5c6.4 0 11.6-5 12-11.3l7.4-136c.4-6.9-5.1-12.7-12-12.7h-63.3c-6.9 0-12.4 5.8-12 12.7z"/></svg>',
+  search:'<svg viewBox="0 0 512 512" fill="#22E1D6"><path d="M304 192v32c0 6.6-5.4 12-12 12h-56v56c0 6.6-5.4 12-12 12h-32c-6.6 0-12-5.4-12-12v-56h-56c-6.6 0-12-5.4-12-12v-32c0-6.6 5.4-12 12-12h56v-56c0-6.6 5.4-12 12-12h32c6.6 0 12 5.4 12 12v56h56c6.6 0 12 5.4 12 12zm201 284.7L476.7 505c-9.4 9.4-24.6 9.4-33.9 0L343 405.3c-4.5-4.5-7-10.6-7-17V372c-35.3 27.6-79.7 44-128 44C100.3 416 0 315.7 0 192S100.3-32 224-32s224 100.3 224 224c0 48.3-16.4 92.7-44 128h16.3c6.4 0 12.5 2.5 17 7l99.7 99.7c9.3 9.4 9.3 24.6 0 34zM384 192c0-88.4-71.6-160-160-160S64 103.6 64 192s71.6 160 160 160 160-71.6 160-160z"/></svg>',
+  server:'<svg viewBox="0 0 512 512" fill="#3DF5A6"><path d="M480 160H32c-17.673 0-32-14.327-32-32V64c0-17.673 14.327-32 32-32h448c17.673 0 32 14.327 32 32v64c0 17.673-14.327 32-32 32zm-48-88c-13.255 0-24 10.745-24 24s10.745 24 24 24 24-10.745 24-24-10.745-24-24-24zm-64 0c-13.255 0-24 10.745-24 24s10.745 24 24 24 24-10.745 24-24-10.745-24-24-24zm112 248H32c-17.673 0-32-14.327-32-32v-64c0-17.673 14.327-32 32-32h448c17.673 0 32 14.327 32 32v64c0 17.673-14.327 32-32 32zm-48-88c-13.255 0-24 10.745-24 24s10.745 24 24 24 24-10.745 24-24-10.745-24-24-24zm-64 0c-13.255 0-24 10.745-24 24s10.745 24 24 24 24-10.745 24-24-10.745-24-24-24zm112 248H32c-17.673 0-32-14.327-32-32v-64c0-17.673 14.327-32 32-32h448c17.673 0 32 14.327 32 32v64c0 17.673-14.327 32-32 32zm-48-88c-13.255 0-24 10.745-24 24s10.745 24 24 24 24-10.745 24-24-10.745-24-24-24zm-64 0c-13.255 0-24 10.745-24 24s10.745 24 24 24 24-10.745 24-24-10.745-24-24-24z"/></svg>',
+  cog:'<svg viewBox="0 0 512 512" fill="#3DF5A6"><path d="M487.4 315.7l-42.6-24.6c4.3-23.2 4.3-47 0-70.2l42.6-24.6c4.9-2.8 7.1-8.6 5.5-14-11.1-35.6-30-67.8-54.7-94.6-3.8-4.1-10-5.1-14.8-2.3L380.8 110c-17.9-15.4-38.5-27.3-60.8-35.1V25.8c0-5.6-3.9-10.5-9.4-11.7-36.7-8.2-74.3-7.8-109.2 0-5.5 1.2-9.4 6.1-9.4 11.7V75c-22.3 7.7-42.9 19.6-60.8 35.1L88.7 85.5c-4.9-2.8-11-1.9-14.8 2.3-24.7 26.7-43.6 58.9-54.7 94.6-1.7 5.4.6 11.2 5.5 14L67.3 221c-4.3 23.2-4.3 47 0 70.2l-42.6 24.6c-4.9 2.8-7.1 8.6-5.5 14 11.1 35.6 30 67.8 54.7 94.6 3.8 4.1 10 5.1 14.8 2.3l42.6-24.6c17.9 15.4 38.5 27.3 60.8 35.1v49.2c0 5.6 3.9 10.5 9.4 11.7 36.7 8.2 74.3 7.8 109.2 0 5.5-1.2 9.4-6.1 9.4-11.7v-49.2c22.3-7.7 42.9-19.6 60.8-35.1l42.6 24.6c4.9 2.8 11 1.9 14.8-2.3 24.7-26.7 43.6-58.9 54.7-94.6 1.6-5.4-.6-11.2-5.5-14zM256 336c-44.1 0-80-35.9-80-80s35.9-80 80-80 80 35.9 80 80-35.9 80-80 80z"/></svg>',
+};
+
+function setIcon(html){ return html; }
+
+/* ---------- Generadores de bloques repetidos ---------- */
+function painRow(ico, t, d){
+  return `<div class="row" style="margin-bottom:16px">
+    <span class="ico" style="width:46px;height:46px;border-color:var(--amber);flex-shrink:0">${ico}</span>
+    <div><div class="cyan" style="font-size:15px;font-weight:700">${t}</div>
+    <div class="txt2" style="font-size:13px;margin-top:2px">${d}</div></div></div>`;
+}
+function relTableRow(nm, fields, ico, main){
+  return `<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;padding:12px 16px;border-radius:9px;
+    background:${main?'rgba(14,34,54,.85)':'rgba(14,34,54,.4)'};
+    border:${main?'1.5px solid var(--cyan)':'1px solid rgba(44,85,102,.6)'};
+    ${main?'box-shadow:0 0 16px rgba(34,225,214,.3)':''}">
+    <span class="ico" style="width:40px;height:40px;background:${main?'var(--cyan)':'var(--ink)'};flex-shrink:0">${ico}</span>
+    <div><div class="mono" style="font-size:14px;font-weight:700;color:${main?'var(--cyan)':'var(--txt)'}">${nm}</div>
+    <div class="txt2" style="font-size:11px;margin-top:2px">${fields}</div></div></div>`;
+}
+function indepRow(nm){
+  return `<div style="padding:11px 14px;border-radius:8px;background:rgba(4,7,13,.5);border:1px solid rgba(155,134,255,.35);margin-bottom:12px">
+    <div class="mono txt" style="font-size:13px;font-weight:700">${nm}</div>
+    <div class="txt2" style="font-size:10.5px;font-style:italic;margin-top:2px">sin relación aún</div></div>`;
+}
+function sqlCard(tag, sub, desc, ico, color){
+  const cls = color==='var(--cyan)'?'':(color==='var(--mint)'?'m':'a');
+  return `<div class="anim glass ${cls}" style="flex:1;padding:28px 20px;text-align:center">
+    <div style="font-family:var(--serif);font-size:46px;font-weight:700;color:${color};text-shadow:0 0 16px ${color}66">${tag}</div>
+    <div class="txt" style="font-size:14px;letter-spacing:2px;margin-top:6px">${sub}</div>
+    <div style="display:flex;justify-content:center;margin:18px 0"><span class="ico" style="width:50px;height:50px;border-color:${color}">${ico}</span></div>
+    <div class="txt2" style="font-size:13px;line-height:1.4">${desc}</div></div>`;
+}
+function orderRow(nm, vl){
+  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+    <span class="txt" style="font-size:14px">${nm}</span><span class="mint mono" style="font-size:14px;font-weight:700">${vl}</span></div>`;
+}
+function whyRow(f, q){
+  return `<div class="anim row" style="margin-bottom:14px;align-items:center">
+    <span style="flex-shrink:0;width:24px;height:24px;display:inline-block">${I.check}</span>
+    <span class="cyan mono" style="font-size:14px;font-weight:700;min-width:185px">${f}</span>
+    <span class="txt" style="font-size:14px">${q}</span></div>`;
+}
+function concRow(n, t){
+  return `<div class="anim" style="display:flex;gap:18px;align-items:center;margin-bottom:22px">
+    <span style="flex-shrink:0;width:48px;height:48px;border-radius:50%;background:var(--panel);border:1.4px solid var(--cyan);
+      display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:20px;font-weight:700;color:var(--cyan)">${n}</span>
+    <span class="txt" style="font-size:16px;line-height:1.4">${t}</span></div>`;
+}
+
+/* ---------- Sustitución de placeholders ---------- */
+let H = document.getElementById('deck').innerHTML;
+const repl = {
+  '__FIRE__':I.fire,'__DB__':I.db,'__DBC__':I.dbc,'__USERS__':I.users,'__TOOLS__':I.tools,
+  '__LIST__':I.list,'__TARGET__':I.target,'__BOLT__':I.bolt,'__BULB__':I.bulb,'__COINS__':I.coins,
+  '__SORT__':I.sort,'__TIMES__':I.times,
+  '__PAIN1__':painRow(I.warn,'Pérdida de información','Clientes y trabajos que no quedan registrados.'),
+  '__PAIN2__':painRow(I.search,'Sin trazabilidad','No se sabe qué servicio se hizo ni quién lo atendió.'),
+  '__PAIN3__':painRow(I.bolt,'Consultas lentas','Demora para ubicar trabajos previos o su valor.'),
+  '__RELTABLE__':relTableRow('clientes','id_cliente, nombres, cedula, telefono, direccion…',I.users,false)
+    +relTableRow('tecnicos','id_tecnico, nombres, especialidad, telefono, estado',I.tools,false)
+    +relTableRow('servicios','id_servicio, nombre_servicio, precio_base, duracion…',I.list,false)
+    +relTableRow('ordenes_servicio','id_orden, fecha, id_cliente/servicio/tecnico, valor_total…',I.dbc,true),
+  '__INDEP__':indepRow('usuarios')+indepRow('auditoria')+indepRow('historicos'),
+  '__SQLCARD_DDL__':sqlCard('DDL','Creación','7 sentencias CREATE TABLE definen la estructura en PostgreSQL.',I.server,'var(--cyan)'),
+  '__SQLCARD_DML__':sqlCard('DML','Manipulación','20 registros insertados + ejemplos de UPDATE y DELETE.',I.cog,'var(--mint)'),
+  '__SQLCARD_DQL__':sqlCard('DQL','Consulta','6 consultas con SELECT y WHERE sobre una sola tabla.',I.search,'var(--amber)'),
+  '__ORDERROW_Instalación de red_$350.000__':orderRow('Instalación de red','$350.000'),
+  '__ORDERROW_Cambio de medidor_$180.000__':orderRow('Cambio de medidor','$180.000'),
+  '__ORDERROW_Regata y canalización_$160.000__':orderRow('Regata y canalización','$160.000'),
+  '__ORDERROW_Mantenimiento prev._$120.000__':orderRow('Mantenimiento prev.','$120.000'),
+  '__WHY_COUNT / SUM / AVG_¿Cuántas órdenes hay y cuánto factura el negocio en promedio?__':whyRow('COUNT / SUM / AVG','¿Cuántas órdenes hay y cuánto factura el negocio en promedio?'),
+  '__WHY_MAX / MIN_¿Cuál fue la orden más cara y la más económica?__':whyRow('MAX / MIN','¿Cuál fue la orden más cara y la más económica?'),
+  '__WHY_GROUP BY_¿Cómo se reparten ingresos y trabajo por estado, técnico y servicio?__':whyRow('GROUP BY','¿Cómo se reparten ingresos y trabajo por estado, técnico y servicio?'),
+  '__WHY_ORDER BY_¿Qué servicios cuestan más? Apoya cotizaciones y precios.__':whyRow('ORDER BY','¿Qué servicios cuestan más? Apoya cotizaciones y precios.'),
+  '__WHY_Operadores ( * )_Calcula IVA y comisiones sin almacenarlos.__':whyRow('Operadores ( * )','Calcula IVA y comisiones sin almacenarlos.'),
+  '__CONC_1_La base de datos organiza clientes, técnicos, servicios y órdenes, eliminando la informalidad de cuadernos y mensajes.__':concRow(1,'La base de datos organiza clientes, técnicos, servicios y órdenes, eliminando la informalidad de cuadernos y mensajes.'),
+  '__CONC_2_Las funciones y operadores SQL convierten los datos en información de gestión: facturación, ticket promedio y carga por técnico.__':concRow(2,'Las funciones y operadores SQL convierten los datos en información de gestión: facturación, ticket promedio y carga por técnico.'),
+  '__CONC_3_Elegir las funciones por su utilidad —y descartar las que no aportan— demuestra criterio orientado al negocio, no solo manejo técnico.__':concRow(3,'Elegir las funciones por su utilidad —y descartar las que no aportan— demuestra criterio orientado al negocio, no solo manejo técnico.'),
+};
+for(const k in repl){ H = H.split(k).join(repl[k]); }
+document.getElementById('deck').innerHTML = H;
+
+/* ---------- Glows de fondo por tipo de slide ---------- */
+const deck = document.getElementById('deck');
+function paintGlows(){
+  document.querySelectorAll('.slide').forEach(sl=>{
+    if(sl.querySelector('.glow')) return;
+    const type = sl.dataset.bg||'content';
+    const mk=(cls,w,h,l,t)=>{const g=document.createElement('div');g.className='glow '+cls;
+      g.style.width=w+'px';g.style.height=h+'px';g.style.left=l+'px';g.style.top=t+'px';g.style.zIndex=0;
+      sl.insertBefore(g, sl.firstChild);};
+    if(type==='title'){ mk('c',560,520,820,-120); mk('m',420,360,1000,520); mk('v',420,320,-120,560); }
+    else if(type==='section'){ mk('c',600,520,-160,180); mk('m',360,300,1000,-80); }
+    else { mk('c',520,420,1000,-200); mk('m',420,360,-200,500); }
+  });
+}
+paintGlows();
+
+/* ---------- Navegación ---------- */
+const slides=[...document.querySelectorAll('.slide')];
+let idx=0;
+const prog=document.getElementById('progress');
+const pageno=document.getElementById('pageno');
+function show(n){
+  idx=Math.max(0,Math.min(slides.length-1,n));
+  slides.forEach((s,i)=>{ s.classList.toggle('active',i===idx); s.classList.toggle('prev',i<idx); });
+  prog.style.width=((idx+1)/slides.length*100)+'%';
+  pageno.textContent=('0'+(idx+1)).slice(-2)+' / '+('0'+slides.length).slice(-2);
+  // animar barras del slide de charts
+  if(slides[idx].querySelector('.bars')){
+    slides[idx].querySelectorAll('.bar-fill').forEach(b=>{ b.style.height='0'; void b.offsetWidth; setTimeout(()=>b.style.height=b.dataset.h, 120); });
+  }
+}
+function next(){ show(idx+1); }
+function prev(){ show(idx-1); }
+document.getElementById('next').onclick=next;
+document.getElementById('prev').onclick=prev;
+deck.addEventListener('click',e=>{ if(e.target.closest('.navbtn'))return; next(); });
+document.addEventListener('keydown',e=>{
+  if(['ArrowRight','ArrowDown',' ','PageDown','Enter'].includes(e.key)){e.preventDefault();next();}
+  else if(['ArrowLeft','ArrowUp','PageUp','Backspace'].includes(e.key)){e.preventDefault();prev();}
+  else if(e.key==='Home'){show(0);} else if(e.key==='End'){show(slides.length-1);}
+  else if(e.key==='f'||e.key==='F'){ toggleFS(); }
+});
+function toggleFS(){ if(!document.fullscreenElement){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();}else{document.exitFullscreen&&document.exitFullscreen();} }
+
+/* ---------- Escalado responsivo ---------- */
+function fit(){
+  const sw=window.innerWidth, sh=window.innerHeight;
+  const sc=Math.min(sw/1280, sh/720);
+  deck.style.transform='scale('+sc+')';
+}
+deck.style.transformOrigin='center center';
+window.addEventListener('resize',fit); fit();
+
+/* ---------- Ocultar hint ---------- */
+setTimeout(()=>{const h=document.getElementById('hint'); if(h) h.style.opacity='0';}, 5000);
+
+/* ---------- Red de nodos animada (canvas) ---------- */
+const cv=document.getElementById('net'), cx=cv.getContext('2d');
+function rsz(){ cv.width=1280; cv.height=720; }
+rsz();
+const N=42, pts=[];
+for(let i=0;i<N;i++){ pts.push({x:Math.random()*1280,y:Math.random()*720,vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25}); }
+function tick(){
+  cx.clearRect(0,0,1280,720);
+  for(const p of pts){ p.x+=p.vx;p.y+=p.vy; if(p.x<0||p.x>1280)p.vx*=-1; if(p.y<0||p.y>720)p.vy*=-1; }
+  for(let i=0;i<N;i++){
+    for(let j=i+1;j<N;j++){
+      const dx=pts[i].x-pts[j].x, dy=pts[i].y-pts[j].y, d=Math.hypot(dx,dy);
+      if(d<150){ cx.strokeStyle='rgba(34,225,214,'+(0.10*(1-d/150)).toFixed(3)+')'; cx.lineWidth=1;
+        cx.beginPath();cx.moveTo(pts[i].x,pts[i].y);cx.lineTo(pts[j].x,pts[j].y);cx.stroke(); }
+    }
+    cx.fillStyle='rgba(61,245,166,.35)'; cx.beginPath(); cx.arc(pts[i].x,pts[i].y,1.4,0,7); cx.fill();
+  }
+  requestAnimationFrame(tick);
+}
+tick();
+
+show(0);
+</script>
+</body>
+</html>
